@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>ERP Graph Explorer</title>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; }
+    #graph { height: 70vh; border: 1px solid #ddd; }
+    #meta { white-space: pre-wrap; border: 1px solid #ddd; padding: 8px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h3>ERP Graph Explorer</h3>
+  <input id="nodeId" placeholder="Enter node id (e.g. 740506)" />
+  <button onclick="expandRoot()">Expand Node</button>
+  <div id="graph"></div>
+  <h4>Node Metadata</h4>
+  <div id="meta">Click a node to inspect metadata.</div>
+
+  <script>
+    const nodes = new vis.DataSet([]);
+    const edges = new vis.DataSet([]);
+    const network = new vis.Network(
+      document.getElementById("graph"),
+      { nodes, edges },
+      { physics: { stabilization: true } }
+    );
+
+    async function expandNode(id) {
+      const r = await fetch(`/graph/neighbors/${encodeURIComponent(id)}`);
+      if (!r.ok) return alert(`Failed to load neighbors for ${id}`);
+      const data = await r.json();
+
+      nodes.update([{ id: data.node.id, label: `${data.node.type}\n${data.node.id}` }]);
+
+      for (const n of (data.neighbors || [])) {
+        nodes.update([{ id: n.id, label: `${n.type}\n${n.id}` }]);
+      }
+
+      for (const e of (data.edges || [])) {
+        edges.update([{
+          id: `${e.source}-${e.target}-${e.relationship}`,
+          from: e.source,
+          to: e.target,
+          label: e.relationship,
+          arrows: "to"
+        }]);
+      }
+    }
+
+    async function expandRoot() {
+      const id = document.getElementById("nodeId").value.trim();
+      if (!id) return;
+      await expandNode(id);
+    }
+
+    network.on("doubleClick", async (params) => {
+      if (params.nodes.length) await expandNode(params.nodes[0]);
+    });
+
+    network.on("click", async (params) => {
+      if (!params.nodes.length) return;
+      const id = params.nodes[0];
+      const r = await fetch(`/graph/node/${encodeURIComponent(id)}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      document.getElementById("meta").textContent = JSON.stringify(d.node, null, 2);
+    });
+  </script>
+</body>
+</html>
