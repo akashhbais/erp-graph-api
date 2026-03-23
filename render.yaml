@@ -7,7 +7,7 @@ services:
     startCommand: bash backend/deploy/start.sh
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.0
+        value: 3.11.9
       - key: DEBUG
         value: "false"
       - key: APP_DB_PATH
