@@ -114,6 +114,49 @@ $body = '{"question":"Which customers generated the highest billing value?"}'
 Invoke-WebRequest http://127.0.0.1:8000/chat/query -Method POST -ContentType "application/json" -Body $body |
   Select-Object -ExpandProperty Content
 ```
+## User Interface
+
+### Graph + Chat (Combined)
+```
+GET /
+```
+- Left panel: Interactive graph explorer (expand nodes, inspect metadata)
+- Right panel: Conversational query assistant
+- Open: `https://<your-service>.onrender.com/`
+
+### API Documentation
+```
+GET /docs
+```
+
+---
+
+## Example Queries
+
+**Q: Which customers generated the highest billing value?**
+```
+A: Nelson, Fitzpatrick and Jordan ($55,337.76), Nguyen-Davis ($4,769.30), ...
+```
+
+**Q: Trace order 90504248**
+```
+A: Sales Order → Delivery → Billing Document → Journal Entry
+```
+
+**Q: Write a poem**
+```
+A: This system only answers questions about the ERP dataset.
+```
+
+---
+
+## Architecture
+
+- **Frontend**: Vanilla JS + Vis.js (graph) + HTML (chat)
+- **Backend**: FastAPI + DuckDB + Claude API
+- **Database**: DuckDB (11 tables, order-to-cash schema)
+- **Deployment**: Render (Python 3.11, free tier)
+- **Guardrails**: SQL whitelist + domain filter
 
 ### Domain guard test
 ```powershell
