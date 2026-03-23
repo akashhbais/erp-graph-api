@@ -1,5 +1,6 @@
 from __future__ import annotations
-
+import os
+import httpx
 
 class SQLGenerator:
     SCHEMA_DESCRIPTION: str = """
@@ -53,3 +54,42 @@ class SQLGenerator:
 
         # Default safe query
         return "SELECT COUNT(*) as total FROM billing_document"
+
+    @staticmethod
+    def generate_llm_sql(question: str) -> str:
+        """Generate SQL from natural language question using an LLM."""
+        api_key = os.getenv("LLM_API_KEY", "").strip()
+        base_url = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+        model = os.getenv("LLM_MODEL", "llama-3.1-8b-instant")
+
+        if not api_key:
+            raise RuntimeError("LLM_API_KEY missing")
+
+        prompt = f"""
+Return ONLY SQL for DuckDB.
+Rules:
+- SELECT only
+- Use ERP tables only
+- Add LIMIT 200 if missing
+Question: {question}
+""".strip()
+
+        with httpx.Client(timeout=40) as client:
+            r = client.post(
+                f"{base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "temperature": 0,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+            r.raise_for_status()
+            text = r.json()["choices"][0]["message"]["content"].strip()
+
+        # remove markdown fences if model returns them
+        text = text.replace("```sql", "").replace("```", "").strip()
+        return text

@@ -13,8 +13,13 @@ class QueryService:
 
     def execute_question(self, question: str) -> Dict[str, Any]:
         """End-to-end NL → SQL → result pipeline."""
-        # 1. Generate SQL
-        sql = SQLGenerator.generate(question)
+        try:
+            sql = SQLGenerator.generate(question)
+            mode = "llm"
+        except Exception as ex:
+            sql = SQLGenerator.generate_fallback(question)
+            mode = "fallback"
+            generator_error = str(ex)
 
         # 2. Enforce limit
         sql = SQLValidator.enforce_limit(sql, settings.MAX_QUERY_ROWS)
@@ -39,6 +44,8 @@ class QueryService:
                 "generated_sql": sql,
                 "rows": rows,
                 "row_count": len(rows),
+                "mode": mode,
+                "generator_error": generator_error,
             }
         except Exception as ex:
             return {
