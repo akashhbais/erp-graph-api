@@ -1,244 +1,253 @@
-# AI-Assisted Development Workflow
+# AI Coding Session Workflow
 
-## Project: ERP Graph Intelligence Platform
+## Overview
+This document captures the AI-assisted development workflow used to build the ERP Graph Intelligence Platform.
 
----
+## Session Logs
 
-## Phase 1: Requirements & Design
+### Session 1: Architecture Design (30 min)
+**Goal**: Design canonical schema and graph structure
 
-### Initial Brief
-- Build production-grade ERP graph API
-- Ingest SAP order-to-cash dataset
-- Implement natural language query engine with guardrails
-- Demonstrate data traceability
+**AI Prompts Used**:
+- "Design a normalized ERP schema for order-to-cash flow"
+- "What are the key entities and relationships in SAP data?"
+- "How should I model a sales order → delivery → billing flow as a graph?"
 
-### AI Collaboration Strategy
-Used Claude to:
-1. **Review** requirements and suggest architectural patterns
-2. **Design** service layers and dependency injection
-3. **Identify** missing safety guardrails (SQL injection, domain filtering)
+**Decisions**:
+- ✅ 11 entity tables (customer, product, sales_order, delivery, billing_document, journal_entry, etc.)
+- ✅ DuckDB for canonical storage (OLAP-friendly)
+- ✅ Graph edges for traceability (source → target → relationship)
 
-### Key Design Decisions
-- **Graph model**: Entities and edges stored in canonical DuckDB schema
-- **Layering**: Service → Route → FastAPI (clean separation of concerns)
-- **Safety first**: Domain guard + SQL validator before execution
+**Output**: `schema.sql`, entity definitions
 
 ---
 
-## Phase 2: Data Pipeline Implementation
+### Session 2: Data Ingestion Pipeline (45 min)
+**Goal**: Build JSONL → DuckDB normalizer
 
-### Problem Statement
-- Dataset: 49 JSONL files in nested folders (order-to-cash entities)
-- Challenge: Map SAP source fields to canonical schema
+**AI Prompts Used**:
+- "How to parse nested JSONL files into flat tables?"
+- "Handle missing/null values in ERP datasets"
+- "Bulk insert optimization for DuckDB"
 
-### AI-Assisted Process
-1. Created profiling script to inspect raw tables
-2. Used AI to generate field mappings (business_partner → customer, etc.)
-3. Implemented lossy normalization (IDs, dates, decimals, currency codes)
-4. Validated edge types post-ingestion
+**Decisions**:
+- ✅ Pandas for data transformation
+- ✅ Automatic type inference + explicit casting
+- ✅ Batch inserts for performance
 
-### Debugging Approach
-- Ran count queries after each module:
-  - `SELECT COUNT(*) FROM customer` → 8 ✓
-  - `SELECT COUNT(*) FROM graph_edge` → 123 ✓
-  - Verified edge_type distribution
-
-### Outcome
-- Full order-to-cash pipeline: Sales Order → Delivery → Billing → Journal Entry
-- Graph edges properly reflect relationships
+**Output**: `ingest_dataset.py`
 
 ---
 
-## Phase 3: API Layer & Guardrails
+### Session 3: Graph Service Layer (1 hour)
+**Goal**: Implement node lookup, neighbors, flow trace
 
-### Architecture
-```
-POST /chat/query
-  ├─ DomainGuard       (reject politics, weather, jokes)
-  ├─ SQLGenerator      (question → SQL)
-  ├─ SQLValidator      (block DELETE, DROP, check tables)
-  ├─ DuckDB execution  (run with LIMIT 200)
-  └─ Return results
-```
+**AI Prompts Used**:
+- "Query graph neighbors recursively in SQL"
+- "Order-to-cash path tracing algorithm"
+- "Handle cycles and missing relationships gracefully"
 
-### Safety Features Implemented
-1. **Domain Guard**
-   - Whitelist: ERP keywords (customer, order, billing, etc.)
-   - Blacklist: (politics, poem, weather, etc.)
-   - Prevents LLM prompt injection
+**Decisions**:
+- ✅ Recursive CTEs for neighbor traversal
+- ✅ LEFT JOINs to tolerate missing intermediates
+- ✅ Graph edge table for flexible relationships
 
-2. **SQL Validator**
-   - Forbids: DROP, DELETE, INSERT, UPDATE, ALTER
-   - Forbids: SELECT * (data minimization)
-   - Enforces max LIMIT 200 per row
-   - Whitelists allowed tables only
-
-3. **Error Handling**
-   - Malicious queries rejected with HTTP 403
-   - Out-of-domain questions rejected with HTTP 400
-   - Database errors logged but not exposed
-
-### AI Prompting Approach
-Tested with Claude:
-- "Which customers generated the highest billing value?"
-- "Which products appear most frequently in billing documents?"
-- "What is total revenue by customer?"
+**Output**: `graph_service.py`
 
 ---
 
-## Phase 4: Production Hardening
+### Session 4: NL-to-SQL Query Engine (1.5 hours)
+**Goal**: Translate natural language to SQL safely
 
-### Improvements Applied
-1. **Configuration management**
-   - Centralized settings in `core/config.py`
-   - Environment variables for DB path, LLM model, debug mode
+**AI Prompts Used**:
+- "Prompt engineering for SQL generation"
+- "How to constrain LLM to specific tables?"
+- "Validate generated SQL for injection attacks"
 
-2. **Database singleton**
-   - Single connection reused across requests
-   - Connection pooling via DuckDB's built-in mechanism
+**Decisions**:
+- ✅ Structured prompt with table/column context
+- ✅ Whitelist-based SQL validator
+- ✅ SELECT-only enforcement
+- ✅ LIMIT 200 rows max
 
-3. **OpenAPI metadata**
-   - Added descriptions to all endpoints
-   - `/docs` now comprehensive and self-documenting
-
-4. **Comprehensive health checks**
-   - Return DB path, version, status
-   - Useful for deployment diagnostics
-
-5. **Graph statistics**
-   - New `GET /graph/stats` endpoint
-   - Shows data completeness
+**Output**: `sql_generator.py`, `sql_validator.py`
 
 ---
 
-## Phase 5: Testing & Validation
+### Session 5: Guardrails (45 min)
+**Goal**: Restrict off-topic queries
 
-### Manual Testing Performed
-```bash
-# 1. Health
-curl http://127.0.0.1:8000/health
-# Expected: status=ok, database=connected
+**AI Prompts Used**:
+- "Keyword-based domain filtering for ERP"
+- "What are common out-of-domain prompts?"
+- "Strategy to detect adversarial inputs"
 
-# 2. Node lookup
-curl http://127.0.0.1:8000/graph/node/740506
-# Expected: node metadata with edges
+**Decisions**:
+- ✅ Domain guard: whitelist ~50 ERP keywords
+- ✅ Reject non-SELECT statements
+- ✅ Block forbidden keywords (DROP, DELETE, etc.)
 
-# 3. Neighbors
-curl http://127.0.0.1:8000/graph/neighbors/740506
-# Expected: center node + neighbors + edge list
-
-# 4. Flow tracing
-curl http://127.0.0.1:8000/graph/flow/BILLING-001
-# Expected: full sales→delivery→billing→journal path
-
-# 5. NL query
-curl -X POST http://127.0.0.1:8000/chat/query \
-  -d '{"question": "Which customers have highest billing?"}'
-# Expected: generated SQL + results
-
-# 6. Domain guard
-curl -X POST http://127.0.0.1:8000/chat/query \
-  -d '{"question": "Write a poem"}'
-# Expected: HTTP 400, "This system only answers questions..."
-```
-
-### Edge Cases Tested
-- Query with SELECT * → rejected ✓
-- Query with DROP TABLE → rejected ✓
-- Query accessing unauthorized table → rejected ✓
-- Out-of-domain question → rejected ✓
-- Nonexistent node → 404 ✓
-- Database down → 500 with error ✓
+**Output**: `domain_guard.py`, `sql_validator.py`
 
 ---
 
-## Key Learnings
+### Session 6: FastAPI Integration (1 hour)
+**Goal**: Build REST API with proper error handling
 
-### What Worked Well
-1. **Layered architecture** made changes isolated and testable
-2. **Guardrails-first mindset** prevented security issues early
-3. **DuckDB** lightweight but powerful for analytics
-4. **FastAPI** type hints and auto-documentation saved time
+**AI Prompts Used**:
+- "FastAPI dependency injection pattern"
+- "How to structure routes across files?"
+- "Proper HTTP status codes for errors"
 
-### Challenges & Resolutions
-| Challenge | Resolution |
-|-----------|-----------|
-| SAP schema mapping unclear | Created profiling script to inspect raw tables |
-| SQL injection risk | Implemented whitelist + forbid list validator |
-| LLM prompt injection | Added domain guard before SQL generation |
-| Route path duplication | Fixed prefix + route path separation |
-| SELECT * data leaks | Enforced explicit column selection + LIMIT |
+**Decisions**:
+- ✅ Routes split by domain (health, graph, chat, ui)
+- ✅ 404 for not found, 400 for validation, 500 for server errors
+- ✅ Singleton DB connection pattern
 
-### AI Tool Usage
-- **Claude**: Architecture design, code generation, guardrail logic
-- **Strategy**: Ask for design first, then implementation, then validation
-- **Verification**: Always test generated code with actual data
+**Output**: `routes_*.py`, `main.py`
 
 ---
 
-## Deployment Readiness
+### Session 7: Graph UI - Vis.js (1.5 hours)
+**Goal**: Interactive node exploration with metadata
 
-### Before Production
-- [ ] Set `DEBUG=false`
-- [ ] Use read-only database connection when possible
-- [ ] Add authentication (JWT / API keys)
-- [ ] Enable rate limiting
-- [ ] Add structured logging
-- [ ] Set up monitoring & alerts
-- [ ] Use Gunicorn instead of uvicorn
-- [ ] Add reverse proxy (nginx)
+**AI Prompts Used**:
+- "Vis.js network layout and physics"
+- "Fetch neighbors on node double-click"
+- "Display node metadata on click"
 
-### Instrumentation
-```python
-# Example: structured logging
-import logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+**Decisions**:
+- ✅ Vis.js for force-directed layout
+- ✅ Button + double-click to expand
+- ✅ Pre-populated metadata panel
 
-@router.post("/chat/query")
-def query(...):
-    logger.info(f"Query: {question}", extra={"user_id": user_id})
-    result = svc.execute_question(question)
-    logger.info(f"Rows returned: {len(result.get('rows', []))}")
-```
+**Output**: `graph.html`
 
 ---
 
-## Future Improvements
+### Session 8: Chat UI Integration (1 hour)
+**Goal**: Build split-pane UI with graph + chat
 
-1. **LLM Integration**
-   - Replace SQLGenerator placeholders with actual Claude/GPT calls
-   - Few-shot examples for complex queries
+**AI Prompts Used**:
+- "CSS flexbox for split panels"
+- "Append messages dynamically to chat"
+- "Handle API responses and errors gracefully"
 
-2. **Caching**
-   - Cache frequent queries (customers, top products)
-   - Reduce DB load
+**Decisions**:
+- ✅ HTML + vanilla JS (no framework overhead)
+- ✅ Async/await for API calls
+- ✅ User messages blue, assistant messages gray
+- ✅ Auto-scroll on new messages
 
-3. **Pagination**
-   - Return results in pages instead of hard limit
-
-4. **Advanced Auth**
-   - Row-level security based on user role
-   - Customer-specific data filtering
-
-5. **Analytics Dashboard**
-   - Real-time metrics on query performance
-   - Popular queries report
+**Output**: `index.html`
 
 ---
 
-## Conclusion
+### Session 9: Render Deployment (1.5 hours)
+**Goal**: Deploy to free tier with Python runtime
 
-This project demonstrates:
-- **Data engineering**: JSONL → DuckDB normalization
-- **Backend architecture**: Layered services, dependency injection
-- **Safety-first mindset**: Guardrails at every layer
-- **Production readiness**: Config management, health checks, docs
+**AI Prompts Used**:
+- "Python 3.11 vs 3.14 compatibility on Render"
+- "Why pydantic-core fails on free tier?"
+- "DuckDB in /tmp vs persistent disk tradeoffs"
 
-The AI assistance was most valuable in:
-1. Rapid design iteration (days → hours)
-2. Catching security issues early (guardrails)
-3. Code generation + validation
-4. Documentation & examples
+**Decisions**:
+- ✅ Pin Python 3.11.9 (avoid 3.14 Rust build)
+- ✅ Use /tmp for free tier (ephemeral)
+- ✅ Startup script for ingestion on first run
+- ✅ render.yaml for Blueprint deployment
 
-Total time: ~6 hours of focused work + AI collaboration
+**Output**: `render.yaml`, `start.sh`, `.python-version`
+
+---
+
+## Iteration Patterns
+
+### Pattern 1: Test → Fail → Prompt → Fix
+1. Local test: `curl http://127.0.0.1:8000/chat/query`
+2. Observe error (e.g., SQL parsing bug)
+3. Prompt: "Why does this SQL fail with DuckDB?"
+4. Implement fix
+5. Re-test
+
+### Pattern 2: Expand Scope Incrementally
+1. Start with `/health` endpoint
+2. Add `/graph/stats`
+3. Add `/graph/node/{id}`
+4. Add `/graph/neighbors/{id}`
+5. Add `/chat/query`
+6. Add UI
+
+### Pattern 3: Safety-First Guardrails
+- Each feature first validates input
+- Then executes
+- Then returns or errors
+- Failures never expose internals
+
+---
+
+## AI Tools Used
+
+| Tool | Purpose | Sessions |
+|------|---------|----------|
+| **Claude** | Architecture, SQL, prompt engineering | 1-6, 9 |
+| **GitHub Copilot** | Code completion, boilerplate | All |
+| **Cursor** | IDE with AI chat, refactoring | All |
+
+---
+
+## Key Insights
+
+1. **Prompt Clarity Matters**: Detailed prompts yield better SQL generation
+2. **Guardrails First**: Safety must be baked in, not added after
+3. **Iterative UI**: UI evolved from `/graph.html` → `/index.html` (split pane)
+4. **Deployment Challenges**: Free tier constraints (no Rust, no persistent disk) drove decisions
+5. **Type Safety**: Pydantic + DuckDB schema validation catches most bugs early
+
+---
+
+## Time Breakdown
+
+| Component | Hours |
+|-----------|-------|
+| Architecture | 0.5 |
+| Data Pipeline | 0.75 |
+| Graph Service | 1.0 |
+| NL Query Engine | 1.5 |
+| Guardrails | 0.75 |
+| API | 1.0 |
+| Graph UI | 1.5 |
+| Chat UI | 1.0 |
+| Deployment | 1.5 |
+| **Total** | **~9.5 hours** |
+
+---
+
+## Lessons for LLM-Assisted Development
+
+✅ **Do**:
+- Ask for algorithm explanations before implementation
+- Test edge cases after AI suggests code
+- Validate security-critical code manually
+- Use AI for boilerplate, not just logic
+
+❌ **Don't**:
+- Copy-paste without understanding
+- Skip error handling
+- Trust generated SQL without validation
+- Deploy without local testing
+
+---
+
+## Future Improvements (Out of Scope)
+
+- [ ] Streaming responses from LLM
+- [ ] Conversation memory across sessions
+- [ ] Graph clustering/community detection
+- [ ] Semantic search over entities
+- [ ] Real-time data sync
+- [ ] GraphQL endpoint
+
+---
+
+**Last Updated**: 26 March 2026
