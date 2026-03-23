@@ -11,7 +11,7 @@ services:
       - key: DEBUG
         value: "false"
       - key: APP_DB_PATH
-        value: /var/data/app.duckdb
+        value: /tmp/app.duckdb
     disk:
       name: erp_data
       mountPath: /var/data
