@@ -12,7 +12,3 @@ services:
         value: "false"
       - key: APP_DB_PATH
         value: /tmp/app.duckdb
-    disk:
-      name: erp_data
-      mountPath: /var/data
-      sizeGB: 1
