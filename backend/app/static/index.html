@@ -5,179 +5,419 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ERP Graph Intelligence Platform</title>
   <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; }
-    .container { display: flex; height: 100vh; }
-    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: #333;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;            /* stop full-page jumping */
+      overscroll-behavior: none;
+    }
+
+    .container {
+      display: flex;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    /* Graph Panel */
     .graph-panel {
       flex: 1;
       display: flex;
       flex-direction: column;
-      border-right: 1px solid #ddd;
       background: white;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+      z-index: 10;
+      min-height: 0; /* important for flex children scroll behavior */
     }
-    
-    .chat-panel {
-      width: 350px;
+
+    .graph-header {
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-bottom: 2px solid rgba(0, 0, 0, 0.1);
+    }
+
+    .graph-header h2 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 12px;
       display: flex;
-      flex-direction: column;
-      background: white;
-      border-left: 1px solid #ddd;
+      align-items: center;
+      gap: 10px;
     }
-    
-    .header {
-      padding: 16px;
-      border-bottom: 1px solid #ddd;
-      background: #f9f9f9;
+
+    .graph-header p {
+      font-size: 13px;
+      opacity: 0.9;
     }
-    
-    .header h3 { font-size: 18px; color: #333; }
-    
-    #graph {
-      flex: 1;
-      border: 1px solid #ddd;
-    }
-    
+
     .node-controls {
-      padding: 12px;
+      padding: 16px;
       display: flex;
-      gap: 8px;
-      border-bottom: 1px solid #ddd;
+      gap: 10px;
+      border-bottom: 1px solid #e0e0e0;
+      background: #f8f9fa;
     }
-    
+
     .node-controls input {
       flex: 1;
-      padding: 8px;
+      padding: 10px 14px;
       border: 1px solid #ddd;
-      border-radius: 4px;
+      border-radius: 6px;
       font-size: 14px;
+      transition: border-color 0.3s;
     }
-    
+
+    .node-controls input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
     .node-controls button {
-      padding: 8px 16px;
-      background: #007bff;
+      padding: 10px 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       font-size: 14px;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
     }
-    
-    .node-controls button:hover { background: #0056b3; }
-    
+
+    .node-controls button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .node-controls button:active {
+      transform: translateY(0);
+    }
+
+    #graph {
+      flex: 1;
+      min-height: 320px;
+      border: 1px solid #e0e0e0;
+    }
+
     .metadata {
-      padding: 12px;
-      border-bottom: 1px solid #ddd;
-      max-height: 150px;
+      padding: 16px;
+      border-top: 1px solid #e0e0e0;
+      max-height: 160px;
       overflow-y: auto;
       font-size: 12px;
-      background: #f9f9f9;
+      background: #f8f9fa;
     }
-    
+
+    .metadata h4 {
+      margin-bottom: 8px;
+      color: #667eea;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
     .metadata pre {
       white-space: pre-wrap;
       word-wrap: break-word;
-      font-family: monospace;
+      font-family: "Monaco", "Courier New", monospace;
+      background: white;
+      padding: 10px;
+      border-radius: 4px;
+      border-left: 3px solid #667eea;
+      line-height: 1.4;
     }
-    
+
+    /* Chat Panel */
+    .chat-panel {
+      width: 400px;
+      display: flex;
+      flex-direction: column;
+      background: white;
+      border-left: 1px solid #e0e0e0;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.05);
+      min-height: 0; /* important for flex children scroll behavior */
+    }
+
+    .chat-header {
+      padding: 20px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+      border-bottom: 2px solid rgba(0, 0, 0, 0.1);
+    }
+
+    .chat-header h2 {
+      font-size: 22px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
     .chat-messages {
       flex: 1;
-      overflow-y: auto;
-      padding: 12px;
+      min-height: 0;
+      overflow-y: auto;            /* only this section scrolls */
+      overscroll-behavior: contain;
+      padding: 16px;
       display: flex;
       flex-direction: column;
       gap: 12px;
+      background: #fafafa;
     }
-    
+
     .message {
-      padding: 10px 12px;
-      border-radius: 8px;
-      max-width: 90%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      max-width: 95%;
       word-wrap: break-word;
-      font-size: 13px;
-      line-height: 1.4;
+      font-size: 14px;
+      line-height: 1.5;
+      animation: slideIn 0.3s ease;
     }
-    
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
     .message.user {
       align-self: flex-end;
-      background: #007bff;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
+      border-radius: 12px 4px 12px 12px;
     }
-    
+
     .message.assistant {
       align-self: flex-start;
-      background: #e9ecef;
+      background: white;
       color: #333;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px 12px 12px 12px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     }
-    
+
     .message.error {
       align-self: flex-start;
-      background: #f8d7da;
-      color: #721c24;
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+      border-radius: 4px 12px 12px 12px;
     }
-    
+
+    .message.info {
+      align-self: center;
+      background: #d1ecf1;
+      color: #0c5460;
+      font-size: 13px;
+      text-align: center;
+      border-radius: 6px;
+    }
+
+    .loading-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .query-section {
+      margin-bottom: 12px;
+    }
+
+    .query-label {
+      font-weight: 600;
+      color: #667eea;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .query-text {
+      background: #f0f2ff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border-left: 3px solid #667eea;
+      font-family: "Monaco", "Courier New", monospace;
+      font-size: 12px;
+      color: #333;
+      line-height: 1.4;
+      overflow-x: auto;
+    }
+
+    .answer-label {
+      font-weight: 600;
+      color: #f5576c;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 8px;
+      margin-bottom: 6px;
+      display: block;
+    }
+
+    .answer-text {
+      background: white;
+      padding: 10px 12px;
+      border-radius: 6px;
+      border-left: 3px solid #f5576c;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #333;
+    }
+
+    .table-results {
+      overflow-x: auto;
+      font-size: 12px;
+    }
+
+    .table-results table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+
+    .table-results th {
+      background: #667eea;
+      color: white;
+      padding: 8px;
+      text-align: left;
+      font-weight: 600;
+    }
+
+    .table-results td {
+      padding: 8px;
+      border-bottom: 1px solid #e0e0e0;
+      background: white;
+    }
+
+    .table-results tr:hover {
+      background: #f8f9fa;
+    }
+
     .chat-input {
-      padding: 12px;
-      border-top: 1px solid #ddd;
+      padding: 16px;
+      border-top: 1px solid #e0e0e0;
       display: flex;
-      gap: 8px;
+      gap: 10px;
+      background: white;
     }
-    
+
     .chat-input input {
       flex: 1;
-      padding: 8px;
+      padding: 12px 14px;
       border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 13px;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: border-color 0.3s;
     }
-    
+
+    .chat-input input:focus {
+      outline: none;
+      border-color: #f5576c;
+      box-shadow: 0 0 0 3px rgba(245, 87, 108, 0.1);
+    }
+
     .chat-input button {
-      padding: 8px 16px;
-      background: #28a745;
+      padding: 12px 24px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 14px;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
     }
-    
-    .chat-input button:hover { background: #218838; }
-    
+
+    .chat-input button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
+    }
+
     .chat-input button:disabled {
-      background: #ccc;
+      opacity: 0.6;
       cursor: not-allowed;
     }
-    
-    .loading { text-align: center; color: #999; font-size: 12px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #667eea;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #764ba2;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <!-- Graph Panel -->
     <div class="graph-panel">
-      <div class="header">
-        <h3>📊 ERP Graph Explorer</h3>
+      <div class="graph-header">
+        <h2>📊 Graph Explorer</h2>
+        <p>Explore order-to-cash relationships • Double-click nodes to expand • Click to inspect metadata</p>
       </div>
       <div class="node-controls">
-        <input id="nodeId" type="text" placeholder="Enter node id (e.g., 740506)" />
-        <button onclick="expandRoot()">Expand</button>
+        <input id="nodeId" type="text" placeholder="Enter node ID (e.g., 740506)" />
+        <button onclick="expandRoot()">Explore</button>
       </div>
       <div id="graph"></div>
       <div class="metadata">
-        <strong>Node Metadata:</strong>
-        <pre id="meta">Click a node to inspect.</pre>
+        <h4>📋 Node Metadata</h4>
+        <pre id="meta">Select a node to view details...</pre>
       </div>
     </div>
 
     <!-- Chat Panel -->
     <div class="chat-panel">
-      <div class="header">
-        <h3>💬 Query Assistant</h3>
+      <div class="chat-header">
+        <h2>💬 Query Assistant</h2>
       </div>
       <div class="chat-messages" id="chatMessages"></div>
       <div class="chat-input">
-        <input id="chatInput" type="text" placeholder="Ask about the data..." />
+        <input id="chatInput" type="text" placeholder="Ask about your data..." />
         <button id="sendBtn" onclick="sendMessage()">Send</button>
       </div>
     </div>
@@ -187,80 +427,121 @@
     const BASE = window.location.origin;
     const nodes = new vis.DataSet([]);
     const edges = new vis.DataSet([]);
+
     const network = new vis.Network(
       document.getElementById("graph"),
       { nodes, edges },
       {
-        physics: { stabilization: { iterations: 200 } },
-        nodes: { shape: "box", color: { background: "#3498db", border: "#2c3e50", highlight: { background: "#e74c3c" } } },
-        edges: { color: "#95a5a6", arrows: { to: { enabled: true } } }
+        physics: { stabilization: { iterations: 150 } },
+        interaction: { navigationButtons: true, keyboard: true, hover: true }
       }
     );
 
-    // Graph Operations
+    function pick(obj, keys, fallback = null) {
+      for (const k of keys) {
+        if (obj && obj[k] !== undefined && obj[k] !== null) return obj[k];
+      }
+      return fallback;
+    }
+
+    function getNodeId(n) {
+      return String(
+        pick(n, ["id", "node_id", "document_id", "billing_document_id", "sales_document_id"], "")
+      );
+    }
+
+    function getNodeType(n) {
+      return String(pick(n, ["type", "node_type", "entity_type"], "Entity"));
+    }
+
+    function normalizeNeighborsPayload(data) {
+      const center = pick(data, ["node", "center", "source_node"], {});
+      const neighbors = pick(data, ["neighbors", "adjacent_nodes", "connected_nodes"], []);
+      const rels = pick(data, ["edges", "relationships", "links"], []);
+
+      return {
+        centerNode: center,
+        neighbors: Array.isArray(neighbors) ? neighbors : [],
+        edges: Array.isArray(rels) ? rels : []
+      };
+    }
+
     async function expandNode(id) {
-      try {
-        const r = await fetch(`${BASE}/graph/neighbors/${encodeURIComponent(id)}`);
-        if (!r.ok) throw new Error(`Node not found: ${id}`);
-        const data = await r.json();
+      const r = await fetch(`${BASE}/graph/neighbors/${encodeURIComponent(id)}`);
+      if (!r.ok) throw new Error(`Node not found: ${id}`);
 
-        nodes.update([{ id: data.node.id, label: `${data.node.type}\n${data.node.id}`, title: JSON.stringify(data.node) }]);
+      const raw = await r.json();
+      const data = normalizeNeighborsPayload(raw);
 
-        for (const n of (data.neighbors || [])) {
-          nodes.update([{ id: n.id, label: `${n.type}\n${n.id}`, title: JSON.stringify(n) }]);
-        }
+      const cId = getNodeId(data.centerNode);
+      if (cId) {
+        nodes.update([{
+          id: cId,
+          label: `${getNodeType(data.centerNode)}\n${cId}`,
+          title: JSON.stringify(data.centerNode, null, 2)
+        }]);
+      }
 
-        for (const e of (data.edges || [])) {
-          edges.update([{
-            id: `${e.source}-${e.target}-${e.relationship}`,
-            from: e.source,
-            to: e.target,
-            label: e.relationship
-          }]);
-        }
-      } catch (err) {
-        alert(err.message);
+      for (const n of data.neighbors) {
+        const nId = getNodeId(n);
+        if (!nId) continue;
+        nodes.update([{
+          id: nId,
+          label: `${getNodeType(n)}\n${nId}`,
+          title: JSON.stringify(n, null, 2)
+        }]);
+      }
+
+      for (const e of data.edges) {
+        const from = String(pick(e, ["source", "from", "source_id"], ""));
+        const to = String(pick(e, ["target", "to", "target_id"], ""));
+        const rel = String(pick(e, ["relationship", "label", "type"], "REL"));
+        if (!from || !to) continue;
+
+        edges.update([{
+          id: `${from}-${to}-${rel}`,
+          from,
+          to,
+          label: rel,
+          arrows: "to"
+        }]);
       }
     }
 
-    function expandRoot() {
-      const id = document.getElementById("nodeId").value.trim();
-      if (id) expandNode(id);
-    }
-
-    network.on("doubleClick", async (params) => {
-      if (params.nodes.length) await expandNode(params.nodes[0]);
-    });
-
-    network.on("click", async (params) => {
-      if (!params.nodes.length) return;
-      const id = params.nodes[0];
-      const r = await fetch(`${BASE}/graph/node/${encodeURIComponent(id)}`);
-      if (!r.ok) return;
-      const d = await r.json();
-      document.getElementById("meta").textContent = JSON.stringify(d.node, null, 2);
-    });
-
-    // Chat Operations
-    const messagesDiv = document.getElementById("chatMessages");
-    const input = document.getElementById("chatInput");
-    const sendBtn = document.getElementById("sendBtn");
-
-    function addMessage(text, role) {
+    function addMessage(text, role = "assistant") {
+      const messagesDiv = document.getElementById("chatMessages");
       const msg = document.createElement("div");
       msg.className = `message ${role}`;
-      msg.textContent = text;
+      msg.innerHTML = text;
       messagesDiv.appendChild(msg);
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      messagesDiv.scrollTop = messagesDiv.scrollHeight; // scroll chat only
+      return msg;
+    }
+
+    function formatResults(data) {
+      const rows = data?.rows || [];
+      if (!rows.length) return "<em>No results found.</em>";
+
+      const cols = Object.keys(rows[0] || {});
+      let html = `<div class="table-results"><table><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr>`;
+      for (const row of rows.slice(0, 20)) {
+        html += `<tr>${cols.map(c => `<td>${row[c] ?? ""}</td>`).join("")}</tr>`;
+      }
+      html += "</table></div>";
+      if (rows.length > 20) html += `<div style="margin-top:6px;font-size:12px;color:#666;">Showing 20 of ${rows.length} rows</div>`;
+      return html;
     }
 
     async function sendMessage() {
+      const input = document.getElementById("chatInput");
+      const sendBtn = document.getElementById("sendBtn");
       const question = input.value.trim();
       if (!question) return;
 
       addMessage(question, "user");
       input.value = "";
       sendBtn.disabled = true;
+      const loading = addMessage("⏳ Processing...", "info");
 
       try {
         const r = await fetch(`${BASE}/chat/query`, {
@@ -269,40 +550,63 @@
           body: JSON.stringify({ question })
         });
 
+        loading.remove();
+
+        const data = await r.json().catch(() => ({}));
         if (!r.ok) {
-          const err = await r.json();
-          addMessage(`Error: ${err.detail}`, "error");
-        } else {
-          const data = await r.json();
-          let response = `Query: ${data.generated_sql}\n\nResults:\n`;
-          if (data.rows && data.rows.length > 0) {
-            response += data.rows.map(r => JSON.stringify(r)).join("\n");
-          } else {
-            response += "No results found.";
-          }
-          addMessage(response, "assistant");
+          addMessage(`<strong>⚠️</strong> ${data?.detail || "Query failed"}`, "error");
+          return;
         }
+
+        const sql = (data.generated_sql || "N/A").trim();
+        const mode = data.mode ? ` <span style="font-size:11px;color:#777;">(${data.mode})</span>` : "";
+
+        addMessage(`
+          <div class="query-section">
+            <span class="query-label">Generated Query${mode}</span>
+            <div class="query-text">${sql}</div>
+          </div>
+          <div class="query-section">
+            <span class="answer-label">Answer (${data.row_count ?? 0} rows)</span>
+            ${formatResults(data)}
+          </div>
+        `, "assistant");
       } catch (err) {
-        addMessage(`Error: ${err.message}`, "error");
+        loading.remove();
+        addMessage(`❌ ${err.message}`, "error");
       } finally {
         sendBtn.disabled = false;
+        input.focus();
       }
     }
 
-    input.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") sendMessage();
+    function expandRoot() {
+      const id = document.getElementById("nodeId").value.trim();
+      if (!id) return addMessage("Enter a node ID first.", "error");
+      expandNode(id).catch(e => addMessage(`❌ ${e.message}`, "error"));
+    }
+
+    network.on("doubleClick", (params) => {
+      if (!params.nodes.length) return;
+      expandNode(params.nodes[0]).catch(e => addMessage(`❌ ${e.message}`, "error"));
     });
 
-    // Load stats on init
-    (async () => {
+    network.on("click", async (params) => {
+      if (!params.nodes.length) return;
+      const id = params.nodes[0];
+      const meta = document.getElementById("meta");
       try {
-        const r = await fetch(`${BASE}/graph/stats`);
-        const data = await r.json();
-        addMessage(`📊 System initialized. Database has ${JSON.stringify(data.statistics).length} entities.`, "assistant");
-      } catch (err) {
-        addMessage(`Failed to load stats: ${err.message}`, "error");
+        const r = await fetch(`${BASE}/graph/node/${encodeURIComponent(id)}`);
+        const d = await r.json();
+        meta.textContent = JSON.stringify(d.node || d, null, 2);
+      } catch {
+        meta.textContent = "Failed to load node metadata.";
       }
-    })();
+    });
+
+    document.getElementById("chatInput").addEventListener("keypress", (e) => {
+      if (e.key === "Enter") sendMessage();
+    });
   </script>
 </body>
 </html>

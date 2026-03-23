@@ -13,9 +13,12 @@ class QueryService:
 
     def execute_question(self, question: str) -> Dict[str, Any]:
         """End-to-end NL → SQL → result pipeline."""
+        mode = "llm"
+        generator_error = None
+
+        # 1. Generate SQL
         try:
             sql = SQLGenerator.generate(question)
-            mode = "llm"
         except Exception as ex:
             sql = SQLGenerator.generate_fallback(question)
             mode = "fallback"
@@ -31,6 +34,8 @@ class QueryService:
                 "question": question,
                 "error": error,
                 "generated_sql": sql,
+                "mode": mode,
+                "generator_error": generator_error,
             }
 
         # 4. Execute
@@ -52,4 +57,6 @@ class QueryService:
                 "question": question,
                 "error": str(ex),
                 "generated_sql": sql,
+                "mode": mode,
+                "generator_error": generator_error,
             }
