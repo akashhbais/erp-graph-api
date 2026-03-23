@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+    startCommand: bash backend/deploy/start.sh
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
