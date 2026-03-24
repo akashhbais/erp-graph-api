@@ -59,7 +59,13 @@ class SQLValidator:
     @staticmethod
     def enforce_limit(sql: str, max_rows: int = 200) -> str:
         """Enforce row limit if not already present."""
-        sql_upper = sql.upper().strip()
-        if "LIMIT" not in sql_upper:
-            sql += f" LIMIT {max_rows}"
-        return sql
+        if not sql or not sql.strip():
+            return f"SELECT 1 LIMIT {max_rows}"
+
+        s = sql.strip().replace("```sql", "").replace("```", "").strip()
+        s = re.sub(r";+\s*$", "", s)  # remove trailing semicolons
+
+        if re.search(r"\blimit\s+\d+\b", s, flags=re.IGNORECASE):
+            return s
+
+        return f"{s} LIMIT {max_rows}"
