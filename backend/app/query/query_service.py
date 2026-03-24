@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from backend.app.core.config import settings
 from backend.app.guardrails.sql_validator import SQLValidator
 from backend.app.query.sql_generator import SQLGenerator
-from backend.app.core.config import settings
 
 
 class QueryService:
@@ -12,22 +12,21 @@ class QueryService:
         self.con = db_connection
 
     def execute_question(self, question: str) -> Dict[str, Any]:
-        """End-to-end NL → SQL → result pipeline."""
-        mode = "llm"
+        mode = "unknown"
         generator_error = None
 
-        # 1. Generate SQL
+        # 1) Generate SQL (template/llm), fallback on error
         try:
-            sql = SQLGenerator.generate(question)
+            sql, mode = SQLGenerator.generate_with_mode(question)
         except Exception as ex:
             sql = SQLGenerator.generate_fallback(question)
             mode = "fallback"
             generator_error = str(ex)
 
-        # 2. Enforce limit
+        # 2) Enforce row limit
         sql = SQLValidator.enforce_limit(sql, settings.MAX_QUERY_ROWS)
 
-        # 3. Validate
+        # 3) Validate SQL safety
         valid, error = SQLValidator.validate(sql)
         if not valid:
             return {
@@ -36,12 +35,14 @@ class QueryService:
                 "generated_sql": sql,
                 "mode": mode,
                 "generator_error": generator_error,
+                "row_count": 0,
+                "rows": [],
             }
 
-        # 4. Execute
+        # 4) Execute
         try:
             result = self.con.execute(sql).fetchall()
-            columns = [desc[0] for desc in self.con.description]
+            columns = [d[0] for d in (self.con.description or [])]
             rows = [dict(zip(columns, row)) for row in result]
 
             return {
@@ -59,4 +60,6 @@ class QueryService:
                 "generated_sql": sql,
                 "mode": mode,
                 "generator_error": generator_error,
+                "row_count": 0,
+                "rows": [],
             }
