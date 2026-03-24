@@ -10,7 +10,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 class QueryRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Natural language ERP question")
+    question: str = Field(..., min_length=1)
 
 
 @router.post("/query")
@@ -19,22 +19,22 @@ def query(req: QueryRequest, con: duckdb.DuckDBPyConnection = Depends(get_db)) -
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    in_domain, msg = DomainGuard.is_in_domain(question)
-    if not in_domain:
+    ok, msg = DomainGuard.is_in_domain(question)
+    if not ok:
         raise HTTPException(status_code=400, detail=msg)
 
-    service = QueryService(con)
-    result = service.execute_question(question)
+    svc = QueryService(con)
+    result = svc.execute_question(question)
 
     if result.get("error"):
-        # Keep details visible for debugging in production
         raise HTTPException(
             status_code=400,
             detail={
                 "message": result.get("error"),
                 "mode": result.get("mode"),
+                "mode_trace": result.get("mode_trace"),
                 "generator_error": result.get("generator_error"),
-                "generated_sql": result.get("generated_sql"),
+                "generated_sql": result.get("generated_sql"),  # frontend can always show query
             },
         )
 
