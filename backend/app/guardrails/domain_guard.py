@@ -4,54 +4,31 @@ from typing import Tuple
 
 
 class DomainGuard:
-    ERP_KEYWORDS: set[str] = {
-        "customer",
-        "order",
-        "delivery",
-        "billing",
-        "sales",
-        "product",
-        "journal",
-        "invoice",
-        "shipment",
-        "quantity",
-        "amount",
-        "document",
-        "erp",
-        "supply chain",
-        "procurement",
-        "material",
-        "warehouse",
-        "inventory",
+    MESSAGE = "This system is designed to answer questions related to the provided dataset only."
+
+    DOMAIN_TERMS = {
+        "customer", "product", "sales", "sales order", "delivery", "billing",
+        "billing document", "invoice", "journal", "journal entry", "plant",
+        "material", "order", "quantity", "amount", "revenue", "flow",
+        "purchase", "accounting", "erp",
     }
 
-    OUT_OF_DOMAIN_PHRASES: set[str] = {
-        "president",
-        "country",
-        "weather",
-        "sports",
-        "politics",
-        "movie",
-        "poem",
-        "recipe",
-        "joke",
-        "write a",
+    BLOCK_TERMS = {
+        "poem", "story", "joke", "weather", "movie", "politics", "recipe",
+        "capital of", "who is", "write code for game", "fantasy", "romance",
     }
 
     @staticmethod
     def is_in_domain(question: str) -> Tuple[bool, str]:
-        """Check if question is about ERP data."""
-        q_lower = question.lower()
+        q = (question or "").strip().lower()
+        if not q:
+            return False, DomainGuard.MESSAGE
 
-        # Check for out-of-domain phrases
-        for phrase in DomainGuard.OUT_OF_DOMAIN_PHRASES:
-            if phrase in q_lower:
-                return False, "This system only answers questions about the ERP dataset."
+        if any(t in q for t in DomainGuard.BLOCK_TERMS):
+            return False, DomainGuard.MESSAGE
 
-        # Check for ERP keywords
-        erp_match_count = sum(1 for kw in DomainGuard.ERP_KEYWORDS if kw in q_lower)
+        score = sum(1 for t in DomainGuard.DOMAIN_TERMS if t in q)
+        if score == 0:
+            return False, DomainGuard.MESSAGE
 
-        if erp_match_count == 0:
-            return False, "This system only answers questions about the ERP dataset."
-
-        return True, ""
+        return True, "ok"

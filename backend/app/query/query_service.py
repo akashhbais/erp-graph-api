@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Dict, List
 
 from backend.app.core.config import settings
@@ -26,39 +28,86 @@ class QueryService:
             ORDER BY table_name, ordinal_position
             """
         ).fetchall()
-
         grouped: Dict[str, List[str]] = {}
         for t, c in rows:
             grouped.setdefault(t, []).append(c)
         return "\n".join([f"{t}({', '.join(cols)})" for t, cols in grouped.items()])
 
     @staticmethod
-    def _is_repairable_error(error_text: str) -> bool:
-        e = (error_text or "").lower()
-        return ("binder error" in e) or ("catalog error" in e) or ("parser error" in e)
+    def _repairable(err: str) -> bool:
+        e = (err or "").lower()
+        return any(k in e for k in ["binder error", "catalog error", "parser error", "does not have a column"])
 
-    def _execute_sql(self, sql: str) -> Dict[str, Any]:
+    @staticmethod
+    def _json_value(v: Any) -> Any:
+        if isinstance(v, Decimal):
+            return float(v)
+        if isinstance(v, (datetime, date)):
+            return v.isoformat()
+        if isinstance(v, bytes):
+            return v.decode("utf-8", errors="replace")
+        return v
+
+    def _execute(self, sql: str) -> Dict[str, Any]:
         result = self.con.execute(sql).fetchall()
-        columns = [d[0] for d in (self.con.description or [])]
-        rows = [dict(zip(columns, row)) for row in result]
-        return {"rows": rows, "row_count": len(rows)}
+        cols = [d[0] for d in (self.con.description or [])]
+        rows = [{c: self._json_value(v) for c, v in zip(cols, r)} for r in result]
+        return {"rows": rows, "row_count": len(rows), "columns": cols}
+
+    @staticmethod
+    def _best_metric_key(rows: List[Dict[str, Any]]) -> str | None:
+        if not rows:
+            return None
+        preferred = [
+            "total_billing_value", "total_amount", "amount", "revenue",
+            "order_count", "billing_doc_count", "count"
+        ]
+        keys = list(rows[0].keys())
+        for p in preferred:
+            for k in keys:
+                if p in k.lower():
+                    return k
+        for k in keys:
+            if isinstance(rows[0].get(k), (int, float)):
+                return k
+        return None
+
+    @classmethod
+    def _answer_text(cls, rows: List[Dict[str, Any]], mode: str) -> str:
+        if not rows:
+            return f"No matching records found. (mode: {mode})"
+
+        metric = cls._best_metric_key(rows)
+        top = rows[0]
+
+        if metric and metric in top:
+            # top + quick comparison with next rows
+            leader = ", ".join([f"{k}={v}" for k, v in list(top.items())[:2]])
+            compare_parts = []
+            for r in rows[1:4]:
+                name = next((str(v) for k, v in r.items() if k != metric), "item")
+                compare_parts.append(f"{name}: {r.get(metric)}")
+            compare = "; ".join(compare_parts) if compare_parts else "No comparison rows."
+            return (
+                f"Top result: {leader}, {metric}={top.get(metric)}.\n"
+                f"Comparison: {compare}\n"
+                f"(mode: {mode}, rows: {len(rows)})"
+            )
+
+        preview = ", ".join([f"{k}={v}" for k, v in list(top.items())[:3]])
+        return f"Found {len(rows)} row(s). Top result: {preview}. (mode: {mode})"
 
     def execute_question(self, question: str) -> Dict[str, Any]:
         schema = self._schema_snapshot()
         mode_trace: List[str] = []
         generator_error = None
 
-        logger.info("Query start question=%s", question)
-
-        # 1) generate initial SQL
+        # Generate
         try:
             sql, mode = SQLGenerator.generate_with_mode(question, schema)
             mode_trace.append(mode)
-            logger.info("Generation success mode=%s sql=%s", mode, sql)
         except Exception as ex:
             generator_error = str(ex)
-            logger.exception("Generation failed error=%s", generator_error)
-
             if not self.allow_fallback:
                 return {
                     "question": question,
@@ -69,21 +118,20 @@ class QueryService:
                     "generator_error": generator_error,
                     "row_count": 0,
                     "rows": [],
+                    "answer_text": "I could not generate SQL for this question.",
                 }
-
             sql = SQLGenerator.generate_fallback(question, schema)
-            mode = "fallback"
-            mode_trace.append(mode)
+            mode_trace.append("fallback")
 
-        # 2) execute + repair loop
         attempted_sql = sql
         last_error = None
 
+        # Execute + repair
         for attempt in range(self.max_repair_attempts + 1):
             attempted_sql = SQLValidator.enforce_limit(attempted_sql, settings.MAX_QUERY_ROWS)
 
-            valid, err = SQLValidator.validate(attempted_sql)
-            if not valid:
+            ok, err = SQLValidator.validate(attempted_sql)
+            if not ok:
                 return {
                     "question": question,
                     "error": err,
@@ -93,27 +141,36 @@ class QueryService:
                     "generator_error": generator_error,
                     "row_count": 0,
                     "rows": [],
+                    "answer_text": "Generated SQL failed safety validation.",
                 }
 
             try:
-                out = self._execute_sql(attempted_sql)
+                out = self._execute(attempted_sql)
                 final_mode = mode_trace[-1] if mode_trace else "unknown"
-                logger.info("Query success mode=%s attempts=%s rows=%s", final_mode, attempt + 1, out["row_count"])
+
+                answer_text = SQLGenerator.summarize_answer(
+                    question=question,
+                    rows=out["rows"],
+                    row_count=out["row_count"],
+                    mode=final_mode,
+                )
+
                 return {
                     "question": question,
                     "generated_sql": attempted_sql,
                     "rows": out["rows"],
+                    "columns": out["columns"],
                     "row_count": out["row_count"],
                     "mode": final_mode,
                     "mode_trace": mode_trace,
                     "generator_error": generator_error,
+                    "answer_text": answer_text,
                 }
             except Exception as ex:
                 last_error = str(ex)
                 logger.exception("Execution failed attempt=%s sql=%s", attempt + 1, attempted_sql)
 
-                can_repair = attempt < self.max_repair_attempts and self._is_repairable_error(last_error)
-                if can_repair:
+                if attempt < self.max_repair_attempts and self._repairable(last_error):
                     try:
                         attempted_sql = SQLGenerator.repair_sql(
                             question=question,
@@ -125,28 +182,27 @@ class QueryService:
                         continue
                     except Exception as repair_ex:
                         generator_error = f"{generator_error or ''} | repair_failed={repair_ex}".strip(" |")
-                        logger.exception("Repair generation failed")
-                        break
                 break
 
-        # 3) optional fallback if not already fallback
+        # Final fallback execute
         if self.allow_fallback and (not mode_trace or mode_trace[-1] != "fallback"):
             try:
-                fallback_sql = SQLGenerator.generate_fallback(question, schema)
-                fallback_sql = SQLValidator.enforce_limit(fallback_sql, settings.MAX_QUERY_ROWS)
-
-                valid, err = SQLValidator.validate(fallback_sql)
-                if valid:
-                    out = self._execute_sql(fallback_sql)
+                fb = SQLGenerator.generate_fallback(question, schema)
+                fb = SQLValidator.enforce_limit(fb, settings.MAX_QUERY_ROWS)
+                ok, err = SQLValidator.validate(fb)
+                if ok:
+                    out = self._execute(fb)
                     mode_trace.append("fallback")
                     return {
                         "question": question,
-                        "generated_sql": fallback_sql,
+                        "generated_sql": fb,
                         "rows": out["rows"],
+                        "columns": out["columns"],
                         "row_count": out["row_count"],
                         "mode": "fallback",
                         "mode_trace": mode_trace,
                         "generator_error": generator_error,
+                        "answer_text": self._answer_text(out["rows"], "fallback"),
                     }
                 last_error = err or last_error
             except Exception as ex:
@@ -155,10 +211,11 @@ class QueryService:
         return {
             "question": question,
             "error": last_error or "SQL execution failed",
-            "generated_sql": attempted_sql,  # always return attempted query for UI display
+            "generated_sql": attempted_sql,
             "mode": mode_trace[-1] if mode_trace else "unknown",
             "mode_trace": mode_trace,
             "generator_error": generator_error,
             "row_count": 0,
             "rows": [],
+            "answer_text": "I could not execute this query. Showing generated SQL for debugging.",
         }
